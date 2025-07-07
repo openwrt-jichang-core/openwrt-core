@@ -1,0 +1,103 @@
+{
+  "Log": {
+    "Level": "error",
+    "Output": ""
+  },
+  "Cores": [
+    {
+      "Type": "sing",
+      "Log": {
+        "Level": "error",
+        "Timestamp": true
+      },
+      "NTP": {
+        "Enable": false,
+        "Server": "time.apple.com",
+        "ServerPort": 0
+      },
+      "OriginalPath": "/tmp/sing_origin.json"
+    }
+  ],
+  "Nodes": [
+    {
+      "Core": "sing",
+      "ApiHost": "https://fw.666666669.xyz",
+      "ApiKey": "p-s-j-i-q-i-6666#-*&-6-6/-9-a=d-sdh9854x",
+      "NodeID": 130,
+      "NodeType": "hysteria2",
+      "Timeout": 30,
+      "ListenIP": "::",
+      "ListenPort": 8443,
+      "SendIP": "0.0.0.0",
+      "DeviceOnlineMinTraffic": 1000,
+      "TCPFastOpen": true,
+      "SniffEnabled": true,
+      "CertConfig": {
+        "CertMode": "dns",
+        "RejectUnknownSni": false,
+        "CertDomain": "hy130.333333338.xyz",
+        "CertFile": "/tmp/fullchain.cer",
+        "KeyFile": "/tmp/cert.key",
+        "Email": "psjiqi@gmail.com",
+        "Provider": "cloudflare",
+        "DNSEnv": {
+          "EnvName": "env1"
+        }
+      }
+    },
+    {
+      "Core": "xray",
+      "ApiHost": "https://fw.666666669.xyz",
+      "ApiKey": "p-s-j-i-q-i-6666#-*&-6-6/-9-a=d-sdh9854x",
+      "NodeID": 131,
+      "NodeType": "Vless",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "DeviceOnlineMinTraffic": 1000,
+      "EnableProxyProtocol": false,
+      "EnableUot": true,
+      "EnableTFO": true,
+      "DNSType": "UseIPv4",
+      "CertConfig": {
+        "CertMode": "none",
+        "RejectUnknownSni": false,
+        "CertDomain": "ppanel.test",
+        "CertFile": "/tmp/node.crt",
+        "KeyFile": "/tmp/node.key",
+        "Email": "psjiqi@gmail.com",
+        "Provider": "cloudflare",
+        "DNSEnv": {
+          "CF_DNS_API_TOKEN": "MjitAoA6XwHX6Km33Rc27zrMJRVzskC-lv5y5hfP"
+        }
+      }
+    },
+    {
+      "Core": "xray",
+      "ApiHost": "https://fw.666666669.xyz",
+      "ApiKey": "p-s-j-i-q-i-6666#-*&-6-6/-9-a=d-sdh9854x",
+      "NodeID": 132,
+      "NodeType": "Vmess",
+      "Timeout": 30,
+      "ListenIP": "0.0.0.0",
+      "SendIP": "0.0.0.0",
+      "DeviceOnlineMinTraffic": 1000,
+      "EnableProxyProtocol": false,
+      "EnableUot": true,
+      "EnableTFO": true,
+      "DNSType": "UseIPv4",
+      "CertConfig": {
+        "CertMode": "none",
+        "RejectUnknownSni": false,
+        "CertDomain": "ppanel.test",
+        "CertFile": "/tmp/node.crt",
+        "KeyFile": "/tmp/node.key",
+        "Email": "psjiqi@gmail.com",
+        "Provider": "cloudflare",
+        "DNSEnv": {
+          "CF_DNS_API_TOKEN": "MjitAoA6XwHX6Km33Rc27zrMJRVzskC-lv5y5hfP"
+        }
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/dns
 # OpenWRT 常用指令脚本说明
 ```sh
 rm /etc/init.d/dns

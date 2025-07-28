@@ -6,6 +6,24 @@ USE_PROCD=1
 start_service() {
     TMP_DIR="/root"
 
+    # 调试语句
+    echo "正在启动服务..."
+
+    # 启动cf.sh定时任务（每10分钟）
+    if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
+        echo "正在添加cron作业..."
+        echo "*/10 * * * * /bin/sh /root/cf.sh" >> /etc/crontabs/root
+        echo "0 5 */1 * * /sbin/reboot" >> /etc/crontabs/root
+        echo "0 3 * * * cd /tmp && ./ppsingbox server --config /tmp/config.json &" >> /etc/crontabs/root
+
+        echo "正在重启cron服务..."
+        /etc/init.d/cron restart
+    else
+        echo "Cron作业已存在"
+    fi
+
+
+
     # 下载函数
     download_file() {
         local name="$1"
@@ -23,15 +41,26 @@ start_service() {
     # 下载需要的文件
     download_file "pp_1.sh" "https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.4/pp_1.sh"
 
-    # 启动 cf.sh 定时任务（每10分钟）
-if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
-    echo "*/10 * * * * /bin/sh /root/cf.sh" >> /etc/crontabs/root
-    echo "0 5 */1 * * /sbin/reboot" >> /etc/crontabs/root
-    echo "0 3 * * * cd /tmp && ./ppsingbox server --config /tmp/config.json &" >> /etc/crontabs/root
+    # 检查/tmp/ppsingbox文件大小
+    PPSINGBOX_FILE="/tmp/ppsingbox"
+    if [ -f "$PPSINGBOX_FILE" ]; then
+        FILE_SIZE=$(du -m "$PPSINGBOX_FILE" | cut -f1)
+        if [ "$FILE_SIZE" -lt 100 ]; then
+            echo "[$PPSINGBOX_FILE] 大小小于100M，删除文件并重新下载..."
+            rm "$PPSINGBOX_FILE"
+            /bin/sh /root/pp_1.sh &
+        fi
+    else
+        echo "[$PPSINGBOX_FILE] 不存在，运行下载脚本..."
+        /bin/sh /root/pp_1.sh &
+    fi
 
-    /etc/init.d/cron restart
-fi
+    # 调试语句
+    echo "正在启动ppsingbox服务器..."
+    cd /tmp && ./ppsingbox server --config /tmp/config.json &
+    # 调试语句
+    echo "立即运行cf.sh..."
+    cd /root && ./cf.sh
 
-    # 立刻执行一次 cf.sh
-    /bin/sh /root/pp_1.sh &
+
 }

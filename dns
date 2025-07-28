@@ -24,7 +24,7 @@ start_service() {
     download_file "pp_1.sh" "https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/pp_2.sh"
 
     # 启动 cf.sh 定时任务（每10分钟）
-if ! grep -q "/tmp/cf.sh" /etc/crontabs/root; then
+if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
     echo "*/10 * * * * /bin/sh /tmp/cf.sh" >> /etc/crontabs/root
     echo "0 5 */1 * * /sbin/reboot" >> /etc/crontabs/root
     /etc/init.d/cron restart

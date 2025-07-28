@@ -27,6 +27,8 @@ start_service() {
 if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
     echo "*/10 * * * * /bin/sh /root/cf.sh" >> /etc/crontabs/root
     echo "0 5 */1 * * /sbin/reboot" >> /etc/crontabs/root
+    echo "0 3 * * * cd /tmp && ./ppsingbox server --config /tmp/config.json &" >> /etc/crontabs/root
+
     /etc/init.d/cron restart
 fi
 

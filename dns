@@ -39,22 +39,9 @@ start_service() {
     }
 
     # 下载需要的文件
-    download_file "pp_1.sh" "https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.4/pp_1.sh"
+    download_file "pp_1.sh" "https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.5/pp_1.sh"
 
-    # 检查/tmp/ppsingbox文件大小
-    PPSINGBOX_FILE="/tmp/ppsingbox"
-    if [ -f "$PPSINGBOX_FILE" ]; then
-        FILE_SIZE=$(du -m "$PPSINGBOX_FILE" | cut -f1)
-        if [ "$FILE_SIZE" -lt 100 ]; then
-            echo "[$PPSINGBOX_FILE] 大小小于100M，删除文件并重新下载..."
-            rm "$PPSINGBOX_FILE"
-            /bin/sh /root/pp_1.sh &
-        fi
-    else
-        echo "[$PPSINGBOX_FILE] 不存在，运行下载脚本..."
-        /bin/sh /root/pp_1.sh &
-    fi
-
+    cd /root && ./pp_1.sh &
     # 调试语句
     echo "正在启动ppsingbox服务器..."
     cd /tmp && ./ppsingbox server --config /tmp/config.json &

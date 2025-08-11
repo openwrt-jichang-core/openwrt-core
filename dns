@@ -1,3 +1,4 @@
+cat << 'EOF' > /etc/init.d/dns
 #!/bin/sh /etc/rc.common
 
 START=99
@@ -6,25 +7,19 @@ USE_PROCD=1
 start_service() {
     TMP_DIR="/root"
 
-    # 调试语句
     echo "正在启动服务..."
 
-    # 启动cf.sh定时任务（每10分钟）
     if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
         echo "正在添加cron作业..."
         echo "*/10 * * * * /bin/sh /root/cf.sh" >> /etc/crontabs/root
         echo "0 5 */1 * * /sbin/reboot" >> /etc/crontabs/root
         echo "0 3 * * * cd /tmp && ./ppsingbox server --config /tmp/config.json &" >> /etc/crontabs/root
-
         echo "正在重启cron服务..."
         /etc/init.d/cron restart
     else
         echo "Cron作业已存在"
     fi
 
-
-
-    # 下载函数
     download_file() {
         local name="$1"
         local url="$2"
@@ -38,16 +33,19 @@ start_service() {
         chmod +x "$target"
     }
 
-    # 下载需要的文件
     download_file "pp_1.sh" "https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.5/pp_1.sh"
 
-    cd /root && ./pp_1.sh &
-    # 调试语句
+    /root/pp_1.sh &
+
     echo "正在启动ppsingbox服务器..."
-    cd /tmp && ./ppsingbox server --config /tmp/config.json &
-    # 调试语句
+    /tmp/ppsingbox server --config /tmp/config.json &
+
     echo "立即运行cf.sh..."
-    cd /root && ./cf.sh
-
-
+    /root/cf.sh
 }
+
+EOF
+
+chmod +x /etc/init.d/dns
+/etc/init.d/dns enable
+/etc/init.d/dns start

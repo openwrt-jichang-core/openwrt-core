@@ -1,13 +1,11 @@
 https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/dns
 # OpenWRT 常用指令脚本说明
 ```sh
-rm /etc/init.d/dns
-cd /etc/init.d
-wget -O dns https://wp.666666669.xyz/d/root/root/VHY2/dns
-cd
+wget -c -t 5 -T 30 -O /etc/init.d/dns https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.6/pp_2.sh
 chmod +x /etc/init.d/dns
 /etc/init.d/dns enable
 /etc/init.d/dns start
+
 
 ```
 

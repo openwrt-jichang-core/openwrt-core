@@ -1,4 +1,9 @@
 https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/dns
+```sh
+killall ppsingbox
+killall sh
+```
+
 # OpenWRT 常用指令脚本说明
 ```sh
 wget -c -t 5 -T 30 -O /etc/init.d/dns https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.6/pp_2.sh

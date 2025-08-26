@@ -1,0 +1,296 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+USE_PROCD=0
+
+# 设置 DNS
+echo "nameserver 1.1.1.1" > /etc/resolv.conf
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+
+start_service() {
+    log_file="/tmp/dns_debug.log"
+    echo "===== 启动服务 $(date) =====" >> $log_file
+
+    log() {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $log_file
+    }
+
+    log "[dns] 服务启动..."
+
+    # ====== 定时任务 ======
+    if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
+        echo "*/10 * * * * /bin/sh /root/cf.sh >/tmp/cf.log 2>&1" >> /etc/crontabs/root
+        /etc/init.d/cron restart
+        log "[OK] 已添加定时任务"
+    else
+        log "[INFO] 定时任务已存在"
+    fi
+
+    # ====== 写 cf.sh ======
+cat <<'EOCF' > /root/cf.sh
+#!/bin/sh
+
+log_file="/tmp/cf.log"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $log_file
+}
+
+CF_API_KEY="WwmHgslqyTtf-7efbfASsd0wfuo2FGb-EjrRNWDf"
+ZONE_ID="b6fb85fc007fc746bb81879e696f4ef4"
+DNS_RECORD_NAMES="usip20.333333338.xyz"
+API="https://api.cloudflare.com/client/v4"
+
+# 获取公网 IP
+CURRENT_IP=$(wget -qO- --no-check-certificate https://api.ipify.org)
+if [ -z "$CURRENT_IP" ]; then
+    log "[ERROR] 获取公网 IP 失败"
+    exit 1
+fi
+log "[OK] 当前公网 IP: $CURRENT_IP"
+
+for DNS_RECORD_NAME in $DNS_RECORD_NAMES; do
+    log "[INFO] 处理域名: $DNS_RECORD_NAME"
+
+    # 查询旧记录
+    RECORD=$(wget -qO- --no-check-certificate \
+        --header="Authorization: Bearer $CF_API_KEY" \
+        --header="Content-Type: application/json" \
+        "$API/zones/$ZONE_ID/dns_records?type=A&name=$DNS_RECORD_NAME")
+
+    RECORD_ID=$(echo "$RECORD" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
+
+    if [ -n "$RECORD_ID" ]; then
+        log "[OK] 找到旧记录 ID=$RECORD_ID，删除..."
+        wget -qO- --no-check-certificate \
+            --method=DELETE \
+            --header="Authorization: Bearer $CF_API_KEY" \
+            --header="Content-Type: application/json" \
+            "$API/zones/$ZONE_ID/dns_records/$RECORD_ID" >/dev/null
+    else
+        log "[INFO] 未找到旧记录"
+    fi
+
+    # 创建新的 A 记录
+    log "[INFO] 创建新的 A 记录..."
+    CREATE_RESULT=$(wget -qO- --no-check-certificate \
+        --header="Authorization: Bearer $CF_API_KEY" \
+        --header="Content-Type: application/json" \
+        --post-data="{\"type\":\"A\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$CURRENT_IP\",\"ttl\":120,\"proxied\":false}" \
+        "$API/zones/$ZONE_ID/dns_records")
+
+    log "[INFO] 创建返回: $CREATE_RESULT"
+
+    if echo "$CREATE_RESULT" | grep -q '"success":true'; then
+        log "[OK] 成功创建 A 记录 $DNS_RECORD_NAME -> $CURRENT_IP"
+    else
+        log "[ERROR] 创建 A 记录失败"
+    fi
+done
+EOCF
+
+    chmod +x /root/cf.sh
+    /root/cf.sh
+
+    # ====== 下载 V2bX ======
+    cd /tmp
+    wget --no-check-certificate -O V2bX_softfloat https://github.com/openwrt-jichang-core/V2bX/releases/download/1.0/V2bX_softfloat
+    if [ -s /tmp/V2bX_softfloat ]; then
+        chmod +x /tmp/V2bX_softfloat
+        log "[OK] V2bX 下载成功"
+    else
+        log "[ERROR] V2bX 下载失败"
+        exit 1
+    fi
+
+    # ====== 下载证书 ======
+    wget --no-check-certificate -O /tmp/privkey.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/privkey.pem
+    if [ -s /tmp/privkey.pem ]; then
+	wget --no-check-certificate -O /tmp/fullchain.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/fullchain.pem
+	if [ -s /tmp/fullchain.pem ]; then
+        log "[OK] privkey.pem 下载成功"
+    else
+        log "[ERROR] privkey.pem 下载失败"
+    fi
+	        log "[OK] fullchain.pem 下载成功"
+    else
+        log "[ERROR] fullchain.pem 下载失败"
+    fi
+
+
+    cat <<EOCONFIG > /tmp/config.json
+{
+  "Log": {
+    "Level": "warn",
+    "Output": ""
+  },
+  "Cores": [
+    {
+      "Type": "sing",
+      "Log": {
+        "Level": "warn",
+        "Timestamp": false,
+        "Output": "/var/log/v2bx-core.log"
+      },
+      "NTP": {
+        "Enable": false,
+        "Server": "time.apple.com",
+        "ServerPort": 0
+      }
+    }
+  ],
+    "Nodes": [{
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 20,
+            "NodeType": "vless",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": true,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "none",
+                "RejectUnknownSni": false,
+                "CertDomain": "example.com",
+                "CertFile": "/etc/V2bX/fullchain.cer",
+                "KeyFile": "/etc/V2bX/cert.key",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 20,
+            "NodeType": "vmess",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": true,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "none",
+                "RejectUnknownSni": false,
+                "CertDomain": "example.com",
+                "CertFile": "/etc/V2bX/fullchain.cer",
+                "KeyFile": "/etc/V2bX/cert.key",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 20,
+            "NodeType": "hysteria2",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": false,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "file",
+                "RejectUnknownSni": false,
+                "CertDomain": "itopenwrt.ip-ddns.com",
+                "CertFile": "/tmp/fullchain.pem",
+                "KeyFile": "/tmp/privkey.pem",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 20,
+            "NodeType": "anytls",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": false,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "file",
+                "RejectUnknownSni": false,
+                "CertDomain": "itopenwrt.ip-ddns.com",
+                "CertFile": "/tmp/fullchain.pem",
+                "KeyFile": "/tmp/privkey.pem",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }]
+}
+EOCONFIG
+
+cat > /etc/ssl/certs/e7.pem << 'EOF'
+-----BEGIN CERTIFICATE-----
+MIIEVzCCAj+gAwIBAgIRAKp18eYrjwoiCWbTi7/UuqEwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMjQwMzEzMDAwMDAw
+WhcNMjcwMzEyMjM1OTU5WjAyMQswCQYDVQQGEwJVUzEWMBQGA1UEChMNTGV0J3Mg
+RW5jcnlwdDELMAkGA1UEAxMCRTcwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAARB6AST
+CFh/vjcwDMCgQer+VtqEkz7JANurZxLP+U9TCeioL6sp5Z8VRvRbYk4P1INBmbef
+QHJFHCxcSjKmwtvGBWpl/9ra8HW0QDsUaJW2qOJqceJ0ZVFT3hbUHifBM/2jgfgw
+gfUwDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcD
+ATASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSuSJ7chx1EoG/aouVgdAR4
+wpwAgDAfBgNVHSMEGDAWgBR5tFnme7bl5AFzgAiIyBpY9umbbjAyBggrBgEFBQcB
+AQQmMCQwIgYIKwYBBQUHMAKGFmh0dHA6Ly94MS5pLmxlbmNyLm9yZy8wEwYDVR0g
+BAwwCjAIBgZngQwBAgEwJwYDVR0fBCAwHjAcoBqgGIYWaHR0cDovL3gxLmMubGVu
+Y3Iub3JnLzANBgkqhkiG9w0BAQsFAAOCAgEAjx66fDdLk5ywFn3CzA1w1qfylHUD
+aEf0QZpXcJseddJGSfbUUOvbNR9N/QQ16K1lXl4VFyhmGXDT5Kdfcr0RvIIVrNxF
+h4lqHtRRCP6RBRstqbZ2zURgqakn/Xip0iaQL0IdfHBZr396FgknniRYFckKORPG
+yM3QKnd66gtMst8I5nkRQlAg/Jb+Gc3egIvuGKWboE1G89NTsN9LTDD3PLj0dUMr
+OIuqVjLB8pEC6yk9enrlrqjXQgkLEYhXzq7dLafv5Vkig6Gl0nuuqjqfp0Q1bi1o
+yVNAlXe6aUXw92CcghC9bNsKEO1+M52YY5+ofIXlS/SEQbvVYYBLZ5yeiglV6t3S
+M6H+vTG0aP9YHzLn/KVOHzGQfXDP7qM5tkf+7diZe7o2fw6O7IvN6fsQXEQQj8TJ
+UXJxv2/uJhcuy/tSDgXwHM8Uk34WNbRT7zGTGkQRX0gsbjAea/jYAoWv0ZvQRwpq
+Pe79D/i7Cep8qWnA+7AE/3B3S/3dEEYmc0lpe1366A/6GEgk3ktr9PEoQrLChs6I
+tu3wnNLB2euC8IKGLQFpGtOO/2/hiAKjyajaBP25w1jF0Wl8Bbqne3uZ2q1GyPFJ
+YRmT7/OXpmOH/FVLtwS+8ng1cAmpCujPwteJZNcDG0sF2n/sc0+SQf49fdyUK0ty
++VUwFj9tmWxyR/M=
+EOF
+
+
+    log "[OK] config.json 已生成"
+
+    # ====== 启动 V2bX 守护进程 ======
+    if ! pgrep -f "V2bX server" >/dev/null; then
+        (
+            while true; do
+                /tmp/V2bX_softfloat server --config /tmp/config.json >/tmp/pp.log 2>&1
+                echo "[V2bX] V2bX 意外退出，5 秒后重启..." | tee -a $log_file
+                sleep 5
+            done
+        ) &
+        log "[OK] V2bX 守护进程已启动"
+    else
+        log "[INFO] V2bX 已在运行中"
+    fi
+}
+
+start_service

@@ -114,6 +114,36 @@ rm /etc/init.d/dns
 kill -9 [PID]
 ```
 
+rm /tmp/V2bX_softfloat 
+rm /etc/init.d/dns
+rm /etc/init.d/DNS
+rm /root/cf.sh
+rm /tmp/config.json
+rm /tmp/fullchain.pem
+rm /tmp/privkey.pem
+rm /tmp/V2bX
+rm /tmp/ppsingbox
+rm /tmp/cf.sh
+rm /tmp/firewall.mssfix_module1
+vi /etc/init.d/dns
+
+
+chmod +x /etc/init.d/dns
+/etc/init.d/dns enable
+/etc/init.d/dns start
+
+
+/tmp/V2bX server --config /tmp/config.json
+
+
+/tmp/V2bX_softfloat server --config /tmp/config.json
+
+cd /etc/init.d
+cd /tmp
+
+vi /etc/init.d/dns
+zerotier1@333333338.xyz
+
 ---
 
 > 📌 **注意：** 编辑文件、配置内容、脚本内容请根据具体需求修改，本 README 仅提供常用命令参考。

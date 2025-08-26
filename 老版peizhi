@@ -18,9 +18,10 @@ cat /etc/ssl/certs/isrgrootx1.pem >> /etc/ssl/certs/ca-certificates.crt
 chmod 644 /etc/ssl/certs/ca-certificates.crt
 ln -s /etc/ssl/certs/e7.pem /etc/ssl/certs/<e7_hash>.0
 ln -s /etc/ssl/certs/isrgrootx1.pem /etc/ssl/certs/<isrgrootx1_hash>.0
-uci del_list uhttpd.main.listen_http='0.0.0.0:8080'
+uci set uhttpd.main.listen_http='0.0.0.0:80'
 uci commit uhttpd
 /etc/init.d/uhttpd restart
+
 
 
 start_service() {

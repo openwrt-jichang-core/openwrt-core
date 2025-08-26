@@ -1,4 +1,21 @@
-https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/dns
+架构查询
+uname -m
+ubus call system board
+编译
+启用 JSON v2 的步骤
+
+设置环境变量：在构建或运行时，设置 GOEXPERIMENT=jsonv2 环境变量。例如：
+
+export GOEXPERIMENT=jsonv2
+
+
+或者在构建时直接设置：
+
+GOEXPERIMENT=jsonv2 go build
+
+
+这将启用 JSON v2 实验性 API。
+
 ```sh
 killall ppsingbox
 killall sh

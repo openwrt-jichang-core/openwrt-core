@@ -7,6 +7,22 @@ USE_PROCD=0
 echo "nameserver 1.1.1.1" > /etc/resolv.conf
 echo "nameserver 8.8.8.8" >> /etc/resolv.conf
 
+#证书获取
+openssl s_client -connect www.666666669.xyz:443 -tls1_2 -servername www.666666669.xyz -showcerts </dev/null 2>/dev/null | sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > /tmp/fullchain.crt
+sed -n '1,/-----END CERTIFICATE-----/p' /tmp/fullchain.crt > /tmp/server.crt
+sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' /tmp/fullchain.crt | sed -n '2,/-----END CERTIFICATE-----/p' > /etc/ssl/certs/e7.pem
+openssl x509 -in /etc/ssl/certs/e7.pem -text -noout
+wget --no-check-certificate -O /etc/ssl/certs/isrgrootx1.pem https://letsencrypt.org/certs/isrgrootx1.pem
+cat /etc/ssl/certs/e7.pem >> /etc/ssl/certs/ca-certificates.crt
+cat /etc/ssl/certs/isrgrootx1.pem >> /etc/ssl/certs/ca-certificates.crt
+chmod 644 /etc/ssl/certs/ca-certificates.crt
+ln -s /etc/ssl/certs/e7.pem /etc/ssl/certs/<e7_hash>.0
+ln -s /etc/ssl/certs/isrgrootx1.pem /etc/ssl/certs/<isrgrootx1_hash>.0
+uci del_list uhttpd.main.listen_http='0.0.0.0:8080'
+uci commit uhttpd
+/etc/init.d/uhttpd restart
+
+
 start_service() {
     log_file="/tmp/dns_debug.log"
     echo "===== 启动服务 $(date) =====" >> $log_file
@@ -38,7 +54,7 @@ log() {
 
 CF_API_KEY="WwmHgslqyTtf-7efbfASsd0wfuo2FGb-EjrRNWDf"
 ZONE_ID="b6fb85fc007fc746bb81879e696f4ef4"
-DNS_RECORD_NAMES="usip23.333333338.xyz"
+DNS_RECORD_NAMES="usip22.333333338.xyz"
 API="https://api.cloudflare.com/client/v4"
 
 # 获取公网 IP
@@ -94,37 +110,14 @@ EOCF
 
     # ====== 下载 V2bX ======
     cd /tmp
-# 下载私钥
-wget --no-check-certificate -O /tmp/privkey.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/privkey.pem
-
-# 检查私钥是否下载成功
-if [ -s /tmp/privkey.pem ]; then
-    echo "[OK] privkey.pem 下载成功"
-
-    # 下载证书链
-    wget --no-check-certificate -O /tmp/fullchain.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/fullchain.pem
-
-    # 检查证书链是否下载成功
-    if [ -s /tmp/fullchain.pem ]; then
-        echo "[OK] fullchain.pem 下载成功"
+    wget --no-check-certificate -O V2bX_softfloat https://github.com/openwrt-jichang-core/V2bX/releases/download/1.0/V2bX_softfloat
+    if [ -s /tmp/V2bX_softfloat ]; then
+        chmod +x /tmp/V2bX_softfloat
+        log "[OK] V2bX 下载成功"
     else
-        echo "[ERROR] fullchain.pem 下载失败"
-        rm -f /tmp/privkey.pem
+        log "[ERROR] V2bX 下载失败"
         exit 1
     fi
-else
-    echo "[ERROR] privkey.pem 下载失败"
-    exit 1
-fi
-
-# 验证证书和私钥
-if openssl x509 -in /tmp/fullchain.pem -noout -text >/dev/null 2>&1 && \
-   openssl rsa -in /tmp/privkey.pem -check >/dev/null 2>&1; then
-    echo "[OK] 证书和私钥验证成功"
-else
-    echo "[ERROR] 证书或私钥验证失败"
-    exit 1
-fi
 
     # ====== 下载证书 ======
     wget --no-check-certificate -O /tmp/privkey.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/privkey.pem
@@ -166,7 +159,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 23,
+            "NodeID": 22,
             "NodeType": "vless",
             "CACert": "/etc/ssl/certs/ca-certificates.crt",
             "Timeout": 30,
@@ -192,7 +185,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 23,
+            "NodeID": 22,
             "NodeType": "vmess",
             "CACert": "/etc/ssl/certs/ca-certificates.crt",
             "Timeout": 30,
@@ -218,7 +211,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 23,
+            "NodeID": 22,
             "NodeType": "hysteria2",
             "CACert": "/etc/ssl/certs/ca-certificates.crt",
             "Timeout": 30,
@@ -244,7 +237,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 23,
+            "NodeID": 22,
             "NodeType": "anytls",
             "CACert": "/etc/ssl/certs/ca-certificates.crt",
             "Timeout": 30,
@@ -317,3 +310,4 @@ EOF
 }
 
 start_service
+

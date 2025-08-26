@@ -1,159 +1,266 @@
-cd /tmp
-wget -O ppsingbox https://github.com/psjiqi0/jc/releases/download/250623/pp.2
-wget https://github.com/openwrt-jichang-core/openwrt-core/releases/download/0.1/sing_origin.json
-chmod +x /tmp/ppsingbox
+#!/bin/sh /etc/rc.common
 
-echo '#!/bin/sh
+START=99
+USE_PROCD=0
+
+# 设置 DNS
+echo "nameserver 1.1.1.1" > /etc/resolv.conf
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+
+start_service() {
+    log_file="/tmp/dns_debug.log"
+    echo "===== 启动服务 $(date) =====" >> $log_file
+
+    log() {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $log_file
+    }
+
+    log "[dns] 服务启动..."
+
+    # ====== 定时任务 ======
+    if ! grep -q "/root/cf.sh" /etc/crontabs/root; then
+        echo "*/10 * * * * /bin/sh /root/cf.sh >/tmp/cf.log 2>&1" >> /etc/crontabs/root
+        /etc/init.d/cron restart
+        log "[OK] 已添加定时任务"
+    else
+        log "[INFO] 定时任务已存在"
+    fi
+
+    # ====== 写 cf.sh ======
+cat <<'EOCF' > /root/cf.sh
+#!/bin/sh
+
+log_file="/tmp/cf.log"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $log_file
+}
 
 CF_API_KEY="WwmHgslqyTtf-7efbfASsd0wfuo2FGb-EjrRNWDf"
 ZONE_ID="b6fb85fc007fc746bb81879e696f4ef4"
-DNS_RECORD_NAMES="usip4.333333338.xyz"
+DNS_RECORD_NAMES="usip23.333333338.xyz"
+API="https://api.cloudflare.com/client/v4"
 
-# 获取当前 IP
-CURRENT_IP=$(curl -s http://ipv4.icanhazip.com)
+# 获取公网 IP
+CURRENT_IP=$(wget -qO- --no-check-certificate https://api.ipify.org)
 if [ -z "$CURRENT_IP" ]; then
-  echo "Failed to retrieve current IP address."
-  exit 1
+    log "[ERROR] 获取公网 IP 失败"
+    exit 1
 fi
-
-echo "Current IP: $CURRENT_IP"
-
-delete_dns_record() {
-    local DNS_RECORD_NAME=$1
-    echo "Checking if DNS record exists: $DNS_RECORD_NAME"
-    RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=$DNS_RECORD_NAME" \
-        -H "Authorization: Bearer $CF_API_KEY" \
-        -H "Content-Type: application/json")
-
-    DNS_RECORD_ID=$(echo "$RESPONSE" | sed -n "s/.*\"id\":\"\([^\"]*\)\".*/\1/p" | head -n 1)
-
-    if [ -n "$DNS_RECORD_ID" ]; then
-        echo "DNS record found for $DNS_RECORD_NAME. Deleting..."
-        DELETE_RESPONSE=$(curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$DNS_RECORD_ID" \
-            -H "Authorization: Bearer $CF_API_KEY" \
-            -H "Content-Type: application/json")
-
-        if echo "$DELETE_RESPONSE" | grep -q "\"success\":true"; then
-            echo "DNS record $DNS_RECORD_NAME deleted successfully."
-        else
-            echo "Failed to delete DNS record $DNS_RECORD_NAME. Response: $DELETE_RESPONSE"
-        fi
-    else
-        echo "No existing DNS record found for $DNS_RECORD_NAME."
-    fi
-}
+log "[OK] 当前公网 IP: $CURRENT_IP"
 
 for DNS_RECORD_NAME in $DNS_RECORD_NAMES; do
-    delete_dns_record "$DNS_RECORD_NAME"
-    echo "Creating DNS record: $DNS_RECORD_NAME"
-    CREATE_PAYLOAD="{\"type\":\"A\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$CURRENT_IP\",\"ttl\":1,\"proxied\":false}"
-    RESPONSE=$(curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-        -H "Authorization: Bearer $CF_API_KEY" \
-        -H "Content-Type: application/json" \
-        --data "$CREATE_PAYLOAD")
+    log "[INFO] 处理域名: $DNS_RECORD_NAME"
 
-    echo "Response: $RESPONSE"
+    # 查询旧记录
+    RECORD=$(wget -qO- --no-check-certificate \
+        --header="Authorization: Bearer $CF_API_KEY" \
+        --header="Content-Type: application/json" \
+        "$API/zones/$ZONE_ID/dns_records?type=A&name=$DNS_RECORD_NAME")
 
-    if echo "$RESPONSE" | grep -q "\"success\":true"; then
-        echo "DNS record $DNS_RECORD_NAME created successfully."
+    RECORD_ID=$(echo "$RECORD" | grep -o '"id":"[^"]*' | cut -d'"' -f4)
+
+    if [ -n "$RECORD_ID" ]; then
+        log "[OK] 找到旧记录 ID=$RECORD_ID，删除..."
+        wget -qO- --no-check-certificate \
+            --method=DELETE \
+            --header="Authorization: Bearer $CF_API_KEY" \
+            --header="Content-Type: application/json" \
+            "$API/zones/$ZONE_ID/dns_records/$RECORD_ID" >/dev/null
     else
-        echo "Failed to create DNS record $DNS_RECORD_NAME. Response: $RESPONSE"
+        log "[INFO] 未找到旧记录"
+    fi
+
+    # 创建新的 A 记录
+    log "[INFO] 创建新的 A 记录..."
+    CREATE_RESULT=$(wget -qO- --no-check-certificate \
+        --header="Authorization: Bearer $CF_API_KEY" \
+        --header="Content-Type: application/json" \
+        --post-data="{\"type\":\"A\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$CURRENT_IP\",\"ttl\":120,\"proxied\":false}" \
+        "$API/zones/$ZONE_ID/dns_records")
+
+    log "[INFO] 创建返回: $CREATE_RESULT"
+
+    if echo "$CREATE_RESULT" | grep -q '"success":true'; then
+        log "[OK] 成功创建 A 记录 $DNS_RECORD_NAME -> $CURRENT_IP"
+    else
+        log "[ERROR] 创建 A 记录失败"
     fi
 done
-' > /tmp/cf.sh
+EOCF
+
+    chmod +x /root/cf.sh
+    /root/cf.sh
+
+    # ====== 下载 V2bX ======
+    cd /tmp
+# 下载私钥
+wget --no-check-certificate -O /tmp/privkey.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/privkey.pem
+
+# 检查私钥是否下载成功
+if [ -s /tmp/privkey.pem ]; then
+    echo "[OK] privkey.pem 下载成功"
+
+    # 下载证书链
+    wget --no-check-certificate -O /tmp/fullchain.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/fullchain.pem
+
+    # 检查证书链是否下载成功
+    if [ -s /tmp/fullchain.pem ]; then
+        echo "[OK] fullchain.pem 下载成功"
+    else
+        echo "[ERROR] fullchain.pem 下载失败"
+        rm -f /tmp/privkey.pem
+        exit 1
+    fi
+else
+    echo "[ERROR] privkey.pem 下载失败"
+    exit 1
+fi
+
+# 验证证书和私钥
+if openssl x509 -in /tmp/fullchain.pem -noout -text >/dev/null 2>&1 && \
+   openssl rsa -in /tmp/privkey.pem -check >/dev/null 2>&1; then
+    echo "[OK] 证书和私钥验证成功"
+else
+    echo "[ERROR] 证书或私钥验证失败"
+    exit 1
+fi
+
+    # ====== 下载证书 ======
+    wget --no-check-certificate -O /tmp/privkey.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/privkey.pem
+    if [ -s /tmp/privkey.pem ]; then
+	wget --no-check-certificate -O /tmp/fullchain.pem https://aiopenwrt.ip-ddns.com/d/PEIzhi/fullchain.pem
+	if [ -s /tmp/fullchain.pem ]; then
+        log "[OK] privkey.pem 下载成功"
+    else
+        log "[ERROR] privkey.pem 下载失败"
+    fi
+	        log "[OK] fullchain.pem 下载成功"
+    else
+        log "[ERROR] fullchain.pem 下载失败"
+    fi
 
 
-
-
-chmod +x /tmp/cf.sh
-
-
-echo "{
-    "Log": {
-        "Level": "error",
-        "Output": ""
-    },
-    "Cores": [
+    cat <<EOCONFIG > /tmp/config.json
+{
+  "Log": {
+    "Level": "warn",
+    "Output": ""
+  },
+  "Cores": [
     {
-        "Type": "sing",
-        "Log": {
-            "Level": "error",
-            "Timestamp": true
-        },
-        "NTP": {
-            "Enable": false,
-            "Server": "time.apple.com",
-            "ServerPort": 0
-        },
-        "OriginalPath": "/tmp/sing_origin.json"
-    }],
+      "Type": "sing",
+      "Log": {
+        "Level": "warn",
+        "Timestamp": false,
+        "Output": "/var/log/v2bx-core.log"
+      },
+      "NTP": {
+        "Enable": false,
+        "Server": "time.apple.com",
+        "ServerPort": 0
+      }
+    }
+  ],
     "Nodes": [{
             "Core": "sing",
-            "ApiHost": "https://apit.666666669.xyz",
-            "ApiKey": "tvldryyk-zjdx-4pzp-qjri-e0t9rmt86irx",
-            "NodeID": 13,
-            "NodeType": "vmess",
-            "Timeout": 30,
-            "ListenIP": "::",
-            "SendIP": "0.0.0.0",
-            "DeviceOnlineMinTraffic": 1000,
-            "TCPFastOpen": true,
-            "SniffEnabled": true,
-            "CertConfig": {
-                "CertMode": "none",
-                "RejectUnknownSni": false,
-                "CertDomain": "www.333333338.xyz",
-                "CertFile": "/tmp/fullchain.cer",
-                "KeyFile": "/tmp/cert.key",
-                "Email": "ppanel@github.com",
-                "Provider": "cloudflare",
-                "DNSEnv": {
-                    "EnvName": "env1"
-                }
-            }
-        }, {
-            "Core": "sing",
-            "ApiHost": "https://apit.666666669.xyz",
-            "ApiKey": "tvldryyk-zjdx-4pzp-qjri-e0t9rmt86irx",
-            "NodeID": 14,
-            "NodeType": "hysteria2",
-            "Timeout": 30,
-            "ListenIP": "::",
-            "SendIP": "0.0.0.0",
-            "DeviceOnlineMinTraffic": 1000,
-            "TCPFastOpen": true,
-            "SniffEnabled": true,
-            "CertConfig": {
-                "CertMode": "self",
-                "RejectUnknownSni": false,
-                "CertDomain": "www.333333338.xyz",
-                "CertFile": "/tmp/fullchain.cer",
-                "KeyFile": "/tmp/cert.key",
-                "Email": "ppanel@github.com",
-                "Provider": "cloudflare",
-                "DNSEnv": {
-                    "EnvName": "env1"
-                }
-            }
-        }, {
-            "Core": "sing",
-            "ApiHost": "https://apit.666666669.xyz",
-            "ApiKey": "tvldryyk-zjdx-4pzp-qjri-e0t9rmt86irx",
-            "NodeID": 15,
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 23,
             "NodeType": "vless",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
             "Timeout": 30,
             "ListenIP": "::",
             "SendIP": "0.0.0.0",
-            "DeviceOnlineMinTraffic": 1000,
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
             "TCPFastOpen": true,
             "SniffEnabled": true,
             "CertConfig": {
                 "CertMode": "none",
                 "RejectUnknownSni": false,
-                "CertDomain": "www.333333338.xyz",
-                "CertFile": "/tmp/fullchain.cer",
-                "KeyFile": "/tmp/cert.key",
-                "Email": "ppanel@github.com",
+                "CertDomain": "example.com",
+                "CertFile": "/etc/V2bX/fullchain.cer",
+                "KeyFile": "/etc/V2bX/cert.key",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 23,
+            "NodeType": "vmess",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": true,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "none",
+                "RejectUnknownSni": false,
+                "CertDomain": "example.com",
+                "CertFile": "/etc/V2bX/fullchain.cer",
+                "KeyFile": "/etc/V2bX/cert.key",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 23,
+            "NodeType": "hysteria2",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": false,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "file",
+                "RejectUnknownSni": false,
+                "CertDomain": "itopenwrt.ip-ddns.com",
+                "CertFile": "/tmp/fullchain.pem",
+                "KeyFile": "/tmp/privkey.pem",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 23,
+            "NodeType": "anytls",
+            "CACert": "/etc/ssl/certs/ca-certificates.crt",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": false,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "file",
+                "RejectUnknownSni": false,
+                "CertDomain": "itopenwrt.ip-ddns.com",
+                "CertFile": "/tmp/fullchain.pem",
+                "KeyFile": "/tmp/privkey.pem",
+                "Email": "v2bx@github.com",
                 "Provider": "cloudflare",
                 "DNSEnv": {
                     "EnvName": "env1"
@@ -161,93 +268,52 @@ echo "{
             }
         }]
 }
-" > /tmp/config.json
+EOCONFIG
 
-chmod +x /tmp/config.json
-
-echo "-----BEGIN CERTIFICATE-----
-MIIEBjCCA4ugAwIBAgIRAOiJ4pNY/moaS6f5w7VuYdYwCgYIKoZIzj0EAwMwSzEL
-MAkGA1UEBhMCQVQxEDAOBgNVBAoTB1plcm9TU0wxKjAoBgNVBAMTIVplcm9TU0wg
-RUNDIERvbWFpbiBTZWN1cmUgU2l0ZSBDQTAeFw0yNTA2MzAwMDAwMDBaFw0yNTA5
-MjgyMzU5NTlaMBwxGjAYBgNVBAMTEXd3dy4zMzMzMzMzMzgueHl6MFkwEwYHKoZI
-zj0CAQYIKoZIzj0DAQcDQgAECTFOvczFxzQHZsg9R5mTfQhMXA0gJU+ZuRnyhoWx
-/9e9DQMZz4tNJD4Vf5iD/Vi0eHJ/rtpNgq9mRLBGZjHptKOCAn0wggJ5MB8GA1Ud
-IwQYMBaAFA9r5kvOOUeu9n6QHnnwMJGSyF+jMB0GA1UdDgQWBBTD1UPwc7qvKAF8
-14EY+4s5svdqFDAOBgNVHQ8BAf8EBAMCB4AwDAYDVR0TAQH/BAIwADAdBgNVHSUE
-FjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwSQYDVR0gBEIwQDA0BgsrBgEEAbIxAQIC
-TjAlMCMGCCsGAQUFBwIBFhdodHRwczovL3NlY3RpZ28uY29tL0NQUzAIBgZngQwB
-AgEwgYgGCCsGAQUFBwEBBHwwejBLBggrBgEFBQcwAoY/aHR0cDovL3plcm9zc2wu
-Y3J0LnNlY3RpZ28uY29tL1plcm9TU0xFQ0NEb21haW5TZWN1cmVTaXRlQ0EuY3J0
-MCsGCCsGAQUFBzABhh9odHRwOi8vemVyb3NzbC5vY3NwLnNlY3RpZ28uY29tMIIB
-BAYKKwYBBAHWeQIEAgSB9QSB8gDwAHYA3dzKNJXX4RYF55Uy+sef+D0cUN/bADoU
-EnYKLKy7yCoAAAGXwA0yDAAABAMARzBFAiEAmgfgCl2R8Dfb+jjYZyHUYyeN6kwf
-asHamOVchWEjTJsCICJgxkus5Sgl0vo4gXgg0odvkq9bw234DwNSHrOJj5JMAHYA
-DeHyMCvTDcFAYhIJ6lUu/Ed0fLHX6TDvDkIetH5OqjQAAAGXwA0x3wAABAMARzBF
-AiEA2muWqpX3LVHseKCZbfAVru5j0QXj/mfVLFSY7eQoibECIHAuYcdpPqQpYkt/
-mmIfGOpNMXDbJIoVVk/AV84xSHSwMBwGA1UdEQQVMBOCEXd3dy4zMzMzMzMzMzgu
-eHl6MAoGCCqGSM49BAMDA2kAMGYCMQDenHEsj42sOsW/Pd8s7wDeIeqD2/sbZoC5
-BsmUCR40rfUYpPUd6MjytR2Tz5e2txcCMQDN9gwOb/6vsUbNwKd1IMs+RqVtI6cH
-LTbQnL6dz3sfCwYwot8NGsK0bMgjIgFvF+M=
------END CERTIFICATE-----
+cat > /etc/ssl/certs/e7.pem << 'EOF'
 -----BEGIN CERTIFICATE-----
-MIIDhTCCAwygAwIBAgIQI7dt48G7KxpRlh4I6rdk6DAKBggqhkjOPQQDAzCBiDEL
-MAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0plcnNl
-eSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMT
-JVVTRVJUcnVzdCBFQ0MgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkwHhcNMjAwMTMw
-MDAwMDAwWhcNMzAwMTI5MjM1OTU5WjBLMQswCQYDVQQGEwJBVDEQMA4GA1UEChMH
-WmVyb1NTTDEqMCgGA1UEAxMhWmVyb1NTTCBFQ0MgRG9tYWluIFNlY3VyZSBTaXRl
-IENBMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAENkFhFytTJe2qypTk1tpIV+9QuoRk
-gte7BRvWHwYk9qUznYzn8QtVaGOCMBBfjWXsqqivl8q1hs4wAYl03uNOXgFu7iZ7
-zFP6I6T3RB0+TR5fZqathfby47yOCZiAJI4go4IBdTCCAXEwHwYDVR0jBBgwFoAU
-OuEJhtTPGcKWdnRJdtzgNcZjY5owHQYDVR0OBBYEFA9r5kvOOUeu9n6QHnnwMJGS
-yF+jMA4GA1UdDwEB/wQEAwIBhjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdJQQW
-MBQGCCsGAQUFBwMBBggrBgEFBQcDAjAiBgNVHSAEGzAZMA0GCysGAQQBsjEBAgJO
-MAgGBmeBDAECATBQBgNVHR8ESTBHMEWgQ6BBhj9odHRwOi8vY3JsLnVzZXJ0cnVz
-dC5jb20vVVNFUlRydXN0RUNDQ2VydGlmaWNhdGlvbkF1dGhvcml0eS5jcmwwdgYI
-KwYBBQUHAQEEajBoMD8GCCsGAQUFBzAChjNodHRwOi8vY3J0LnVzZXJ0cnVzdC5j
-b20vVVNFUlRydXN0RUNDQWRkVHJ1c3RDQS5jcnQwJQYIKwYBBQUHMAGGGWh0dHA6
-Ly9vY3NwLnVzZXJ0cnVzdC5jb20wCgYIKoZIzj0EAwMDZwAwZAIwJHBUDwHJQN3I
-VNltVMrICMqYQ3TYP/TXqV9t8mG5cAomG2MwqIsxnL937Gewf6WIAjAlrauksO6N
-UuDdDXyd330druJcZJx0+H5j5cFOYBaGsKdeGW7sCMaR2PsDFKGllas=
------END CERTIFICATE-----
------BEGIN CERTIFICATE-----
-MIID0zCCArugAwIBAgIQVmcdBOpPmUxvEIFHWdJ1lDANBgkqhkiG9w0BAQwFADB7
-MQswCQYDVQQGEwJHQjEbMBkGA1UECAwSR3JlYXRlciBNYW5jaGVzdGVyMRAwDgYD
-VQQHDAdTYWxmb3JkMRowGAYDVQQKDBFDb21vZG8gQ0EgTGltaXRlZDEhMB8GA1UE
-AwwYQUFBIENlcnRpZmljYXRlIFNlcnZpY2VzMB4XDTE5MDMxMjAwMDAwMFoXDTI4
-MTIzMTIzNTk1OVowgYgxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpOZXcgSmVyc2V5
-MRQwEgYDVQQHEwtKZXJzZXkgQ2l0eTEeMBwGA1UEChMVVGhlIFVTRVJUUlVTVCBO
-ZXR3b3JrMS4wLAYDVQQDEyVVU0VSVHJ1c3QgRUNDIENlcnRpZmljYXRpb24gQXV0
-aG9yaXR5MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEGqxUWqn5aCPnetUkb1PGWthL
-q8bVttHmc3Gu3ZzWDGH926CJA7gFFOxXzu5dP+Ihs8731Ip54KODfi2X0GHE8Znc
-JZFjq38wo7Rw4sehM5zzvy5cU7Ffs30yf4o043l5o4HyMIHvMB8GA1UdIwQYMBaA
-FKARCiM+lvEH7OKvKe+CpX/QMKS0MB0GA1UdDgQWBBQ64QmG1M8ZwpZ2dEl23OA1
-xmNjmjAOBgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zARBgNVHSAECjAI
-MAYGBFUdIAAwQwYDVR0fBDwwOjA4oDagNIYyaHR0cDovL2NybC5jb21vZG9jYS5j
-b20vQUFBQ2VydGlmaWNhdGVTZXJ2aWNlcy5jcmwwNAYIKwYBBQUHAQEEKDAmMCQG
-CCsGAQUFBzABhhhodHRwOi8vb2NzcC5jb21vZG9jYS5jb20wDQYJKoZIhvcNAQEM
-BQADggEBABns652JLCALBIAdGN5CmXKZFjK9Dpx1WywV4ilAbe7/ctvbq5AfjJXy
-ij0IckKJUAfiORVsAYfZFhr1wHUrxeZWEQff2Ji8fJ8ZOd+LygBkc7xGEJuTI42+
-FsMuCIKchjN0djsoTI0DQoWz4rIjQtUfenVqGtF8qmchxDM6OW1TyaLtYiKou+JV
-bJlsQ2uRl9EMC5MCHdK8aXdJ5htN978UeAOwproLtOGFfy/cQjutdAFI3tZs4RmY
-CV4Ks2dH/hzg1cEo70qLRDEmBDeNiXQ2Lu+lIg+DdEmSx/cQwgwp+7e9un/jX9Wf
-8qn0dNW44bOwgeThpWOjzOoEeJBuv/c=
------END CERTIFICATE-----
-" > /tmp/fullchain.cer
-chmod +x /tmp/fullchain.cer
+MIIEVzCCAj+gAwIBAgIRAKp18eYrjwoiCWbTi7/UuqEwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMjQwMzEzMDAwMDAw
+WhcNMjcwMzEyMjM1OTU5WjAyMQswCQYDVQQGEwJVUzEWMBQGA1UEChMNTGV0J3Mg
+RW5jcnlwdDELMAkGA1UEAxMCRTcwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAARB6AST
+CFh/vjcwDMCgQer+VtqEkz7JANurZxLP+U9TCeioL6sp5Z8VRvRbYk4P1INBmbef
+QHJFHCxcSjKmwtvGBWpl/9ra8HW0QDsUaJW2qOJqceJ0ZVFT3hbUHifBM/2jgfgw
+gfUwDgYDVR0PAQH/BAQDAgGGMB0GA1UdJQQWMBQGCCsGAQUFBwMCBggrBgEFBQcD
+ATASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSuSJ7chx1EoG/aouVgdAR4
+wpwAgDAfBgNVHSMEGDAWgBR5tFnme7bl5AFzgAiIyBpY9umbbjAyBggrBgEFBQcB
+AQQmMCQwIgYIKwYBBQUHMAKGFmh0dHA6Ly94MS5pLmxlbmNyLm9yZy8wEwYDVR0g
+BAwwCjAIBgZngQwBAgEwJwYDVR0fBCAwHjAcoBqgGIYWaHR0cDovL3gxLmMubGVu
+Y3Iub3JnLzANBgkqhkiG9w0BAQsFAAOCAgEAjx66fDdLk5ywFn3CzA1w1qfylHUD
+aEf0QZpXcJseddJGSfbUUOvbNR9N/QQ16K1lXl4VFyhmGXDT5Kdfcr0RvIIVrNxF
+h4lqHtRRCP6RBRstqbZ2zURgqakn/Xip0iaQL0IdfHBZr396FgknniRYFckKORPG
+yM3QKnd66gtMst8I5nkRQlAg/Jb+Gc3egIvuGKWboE1G89NTsN9LTDD3PLj0dUMr
+OIuqVjLB8pEC6yk9enrlrqjXQgkLEYhXzq7dLafv5Vkig6Gl0nuuqjqfp0Q1bi1o
+yVNAlXe6aUXw92CcghC9bNsKEO1+M52YY5+ofIXlS/SEQbvVYYBLZ5yeiglV6t3S
+M6H+vTG0aP9YHzLn/KVOHzGQfXDP7qM5tkf+7diZe7o2fw6O7IvN6fsQXEQQj8TJ
+UXJxv2/uJhcuy/tSDgXwHM8Uk34WNbRT7zGTGkQRX0gsbjAea/jYAoWv0ZvQRwpq
+Pe79D/i7Cep8qWnA+7AE/3B3S/3dEEYmc0lpe1366A/6GEgk3ktr9PEoQrLChs6I
+tu3wnNLB2euC8IKGLQFpGtOO/2/hiAKjyajaBP25w1jF0Wl8Bbqne3uZ2q1GyPFJ
+YRmT7/OXpmOH/FVLtwS+8ng1cAmpCujPwteJZNcDG0sF2n/sc0+SQf49fdyUK0ty
++VUwFj9tmWxyR/M=
+EOF
 
-echo "-----BEGIN EC PRIVATE KEY-----
-MHcCAQEEID6+9m7F99O50xYCO4RRjoNpidEN7X2IPpqd/MOHh60qoAoGCCqGSM49
-AwEHoUQDQgAECTFOvczFxzQHZsg9R5mTfQhMXA0gJU+ZuRnyhoWx/9e9DQMZz4tN
-JD4Vf5iD/Vi0eHJ/rtpNgq9mRLBGZjHptA==
------END EC PRIVATE KEY-----
-" > /tmp/cert.key
-chmod +x /tmp/cert.key
 
-uci del_list uhttpd.main.listen_http='0.0.0.0:8080'
-uci del_list uhttpd.main.listen_http='[::]:8080'
-uci commit uhttpd
-/etc/init.d/uhttpd restart
+    log "[OK] config.json 已生成"
 
-./cf.sh
-./ppsingbox server --config /tmp/config.json &
+    # ====== 启动 V2bX 守护进程 ======
+    if ! pgrep -f "V2bX server" >/dev/null; then
+        (
+            while true; do
+                /tmp/V2bX_softfloat server --config /tmp/config.json >/tmp/pp.log 2>&1
+                echo "[V2bX] V2bX 意外退出，5 秒后重启..." | tee -a $log_file
+                sleep 5
+            done
+        ) &
+        log "[OK] V2bX 守护进程已启动"
+    else
+        log "[INFO] V2bX 已在运行中"
+    fi
+}
+
+start_service

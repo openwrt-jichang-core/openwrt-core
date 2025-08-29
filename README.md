@@ -52,6 +52,7 @@ rm /tmp/config.json
 rm /tmp/pp.log
 rm /etc/init.d/dns
 rm /etc/cf.sh
+vi /etc/init.d/dns
 ```
 
 ## ⚙️ 修改 OpenWRT 页面端口

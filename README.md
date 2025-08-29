@@ -42,6 +42,17 @@ opkg update
 ```
 
 ---
+## 删除配置
+```sh
+rm /root/cf.sh
+rm /tmp/V2bX
+rm /tmp/cf.log
+rm /tmp/cf_debug.log
+rm /tmp/config.json
+rm /tmp/pp.log
+rm /etc/init.d/dns
+rm /etc/cf.sh
+```
 
 ## ⚙️ 修改 OpenWRT 页面端口
 

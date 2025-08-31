@@ -90,7 +90,7 @@ EOCF
              -O "$BIN" "https://api.github.com/repos/openwrt-jichang-core/openwrt-core/releases/assets/285165556"
         chmod +x "$BIN"
     fi
-    chmod + /tmp/V2bX
+    chmod + x /tmp/V2bX
     if [ -s "$BIN" ]; then
         log "[OK] V2bX 下载成功"
      else

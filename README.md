@@ -1,5 +1,7 @@
+```sh
 架构查询
 uname -m
+
 ubus call system board
 编译
 启用 JSON v2 的步骤
@@ -15,6 +17,8 @@ GOEXPERIMENT=jsonv2 go build
 
 
 这将启用 JSON v2 实验性 API。
+sfulwTY3oEqpMxELvwfSElKTCvqKCXa9NJv4PEMh
+```
 
 ```sh
 killall ppsingbox

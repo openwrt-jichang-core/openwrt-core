@@ -44,7 +44,7 @@ log() {
 
 CF_API_KEY="WwmHgslqyTtf-7efbfASsd0wfuo2FGb-EjrRNWDf"
 ZONE_ID="b6fb85fc007fc746bb81879e696f4ef4"
-DNS_RECORD_NAMES="usip61.333333338.xyz"
+DNS_RECORD_NAMES="usip59.333333338.xyz"
 API="https://api.cloudflare.com/client/v4"
 
 CURRENT_IP=$(curl -s https://api.ipify.org)
@@ -170,7 +170,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 61,
+            "NodeID": 59,
             "NodeType": "vless",
             "Timeout": 30,
             "ListenIP": "::",
@@ -195,7 +195,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 61,
+            "NodeID": 59,
             "NodeType": "vmess",
             "Timeout": 30,
             "ListenIP": "::",
@@ -220,7 +220,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 61,
+            "NodeID": 59,
             "NodeType": "hysteria2",
             "Timeout": 30,
             "ListenIP": "::",
@@ -245,7 +245,7 @@ fi
             "Core": "sing",
             "ApiHost": "https://www.666666669.xyz/",
             "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
-            "NodeID": 61,
+            "NodeID": 59,
             "NodeType": "anytls",
             "Timeout": 30,
             "ListenIP": "::",

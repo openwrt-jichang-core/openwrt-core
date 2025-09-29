@@ -1,0 +1,294 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=98
+USE_PROCD=1
+
+# ====== 写入 DNS 并设置 GitHub Token ======
+echo "nameserver 1.1.1.1" > /etc/resolv.conf
+echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+wait_network() {
+    log "[INFO] 等待网络可用..."
+    TRIES=0
+    MAX_TRIES=12
+    while ! curl -s --head https://www.google.com >/dev/null 2>&1; do
+        TRIES=$((TRIES+1))
+        if [ $TRIES -ge $MAX_TRIES ]; then
+            log "[ERROR] 网络长时间不可用，退出启动"
+            exit 1
+        fi
+        log "[INFO] 网络未就绪，等待 5 秒..."
+        sleep 5
+    done
+    log "[INFO] 网络已就绪"
+}
+
+start_service() {
+    wait_network
+
+    # ====== 写 cf.sh ======
+cat <<'EOCF' > /www/cf.sh
+#!/bin/sh
+log_file=""
+echo "===== 执行 cf.sh $(date) =====" >> $log_file
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $log_file
+}
+
+CF_API_KEY="WwmHgslqyTtf-7efbfASsd0wfuo2FGb-EjrRNWDf"
+ZONE_ID="b6fb85fc007fc746bb81879e696f4ef4"
+DNS_RECORD_NAMES="usip63.333333338.xyz"
+API="https://api.cloudflare.com/client/v4"
+
+CURRENT_IP=$(curl -s https://api.ipify.org)
+if [ -z "$CURRENT_IP" ]; then
+  log "[ERROR] 获取公网 IP 失败"
+  exit 1
+fi
+log "[OK] 当前 IP: $CURRENT_IP"
+
+for DNS_RECORD_NAME in $DNS_RECORD_NAMES; do
+  log "[INFO] 处理域名: $DNS_RECORD_NAME"
+
+  RECORD=$(curl -s -X GET "$API/zones/$ZONE_ID/dns_records?type=A&name=$DNS_RECORD_NAME"     -H "Authorization: Bearer $CF_API_KEY" -H "Content-Type: application/json")
+
+  RECORD_ID=$(echo $RECORD | grep -o '"id":"[^"]*' | cut -d'"' -f4)
+
+  if [ -n "$RECORD_ID" ]; then
+    log "[OK] 找到旧记录 ID=$RECORD_ID，删除..."
+    curl -s -X DELETE "$API/zones/$ZONE_ID/dns_records/$RECORD_ID"       -H "Authorization: Bearer $CF_API_KEY" -H "Content-Type: application/json" >/dev/null
+  else
+    log "[INFO] 未找到旧记录"
+  fi
+
+  log "[INFO] 创建新的 A 记录..."
+  CREATE_RESULT=$(curl -s -X POST "$API/zones/$ZONE_ID/dns_records"     -H "Authorization: Bearer $CF_API_KEY" -H "Content-Type: application/json"     --data "{\"type\":\"A\",\"name\":\"$DNS_RECORD_NAME\",\"content\":\"$CURRENT_IP\",\"ttl\":120,\"proxied\":false}")
+
+  if echo $CREATE_RESULT | grep -q '"success":true'; then
+    log "[OK] 成功创建 A 记录 $DNS_RECORD_NAME -> $CURRENT_IP"
+  else
+    log "[ERROR] 创建 A 记录失败: $CREATE_RESULT"
+  fi
+done
+EOCF
+    chmod +x /www/cf.sh
+    /www/cf.sh
+
+    # ====== 下载 V2bX ======
+    BIN="/tmp/V2bX"
+    if [ ! -s "$BIN" ]; then
+        log "[INFO] 下载 V2bX..."
+        wget  -O "$BIN" "https://github.com/openwrt-jichang-core/V2bX/releases/download/1.4/V2bX"
+        chmod +x "$BIN"
+    fi
+    chmod +x /tmp/V2bX
+    if [ -s "$BIN" ]; then
+        log "[OK] V2bX 下载成功"
+     else
+        log "[ERROR] V2bX 下载失败"
+    exit 1
+    fi
+
+MIPS_BIN="/tmp/mips"
+if [ ! -s "$MIPS_BIN" ]; then
+    log "[INFO] 下载 mips..."
+    wget -O "$MIPS_BIN" "https://github.com/openwrt-jichang-core/V2bX/releases/download/1.8/aarch64"
+    chmod +x "$MIPS_BIN"
+fi
+if [ -s "$MIPS_BIN" ]; then
+    log "[OK] mips 下载成功"
+else
+    log "[ERROR] mips 下载失败"
+    exit 1
+fi
+# config.yml
+CONFIG_FILE="/tmp/config.yml"
+if [ ! -s "$CONFIG_FILE" ]; then
+    log "[INFO] 下载 config.yml..."
+    wget -O "$CONFIG_FILE" "https://github.com/openwrt-jichang-core/V2bX/releases/download/1.8/config.yml"
+    if [ ! -s "$CONFIG_FILE" ]; then
+        log "[ERROR] config.yml 下载失败"
+        exit 1
+    fi
+    log "[OK] config.yml 下载成功"
+
+    # 生成新 UUID 并替换
+    NEWUUID=$(uuidgen)
+    sed -i "s/^uuid: .*/uuid: ${NEWUUID}/" "$CONFIG_FILE"
+else
+    log "[SKIP] config.yml 已存在，跳过下载"
+fi
+
+
+    # ====== 写 config.json ======
+    cat <<EOCONFIG > /tmp/config.json
+{
+  "Log": {
+    "Level": "warn",
+    "Output": ""
+  },
+  "Cores": [
+    {
+      "Type": "sing",
+      "Log": {
+        "Level": "warn",
+        "Timestamp": false,
+        "Output": "/var/log/v2bx-core.log"
+      },
+      "NTP": {
+        "Enable": false,
+        "Server": "time.apple.com",
+        "ServerPort": 0
+      }
+    }
+  ],
+    "Nodes": [{
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 63,
+            "NodeType": "vless",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": true,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "none",
+                "RejectUnknownSni": false,
+                "CertDomain": "example.com",
+                "CertFile": "/etc/V2bX/fullchain.cer",
+                "KeyFile": "/etc/V2bX/cert.key",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 63,
+            "NodeType": "vmess",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": true,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "none",
+                "RejectUnknownSni": false,
+                "CertDomain": "example.com",
+                "CertFile": "/etc/V2bX/fullchain.cer",
+                "KeyFile": "/etc/V2bX/cert.key",
+                "Email": "v2bx@github.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                    "EnvName": "env1"
+                }
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 63,
+            "NodeType": "hysteria2",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": false,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "dns",
+                "RejectUnknownSni": false,
+                "CertDomain": "www.openwt.eu.org",
+                "CertFile": "/tmp/fullchain.cer",
+                "KeyFile": "/tmp/cert.key",
+                "Email": "psjiqi@gmail.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                "CLOUDFLARE_DNS_API_TOKEN": "9gcDILphAhE6ZK7v4XJA1UN7vdxT1n-EJY6Z5d8M",
+                "CLOUDFLARE_EMAIL": "psjiqi@gmail.com"
+                }
+
+            }
+        }, {
+            "Core": "sing",
+            "ApiHost": "https://www.666666669.xyz/",
+            "ApiKey": "77PBXsnc9nUIgXL8aGLIzVgU",
+            "NodeID": 63,
+            "NodeType": "tuic",
+            "Timeout": 30,
+            "ListenIP": "::",
+            "SendIP": "0.0.0.0",
+            "DeviceOnlineMinTraffic": 200,
+            "MinReportTraffic": 0,
+            "TCPFastOpen": false,
+            "SniffEnabled": true,
+            "CertConfig": {
+                "CertMode": "dns",
+                "RejectUnknownSni": false,
+                "CertDomain": "www.openwt.eu.org",
+                "CertFile": "/tmp/fullchain.cer",
+                "KeyFile": "/tmp/cert.key",
+                "Email": "psjiqi@gmail.com",
+                "Provider": "cloudflare",
+                "DNSEnv": {
+                "CLOUDFLARE_DNS_API_TOKEN": "9gcDILphAhE6ZK7v4XJA1UN7vdxT1n-EJY6Z5d8M",
+                "CLOUDFLARE_EMAIL": "psjiqi@gmail.com"
+                }
+
+            }
+        }]
+}
+
+
+EOCONFIG
+
+    # ====== 修改 uhttpd 端口配置 ======
+    uci del_list uhttpd.main.listen_http='0.0.0.0:8080'
+    uci del_list uhttpd.main.listen_http='[::]:8080'
+    uci commit uhttpd
+    /etc/init.d/uhttpd restart
+    log "[OK] uhttpd 配置修改完成"
+
+    # 循环检测 V2bX 是否运行
+    if ! pgrep -f "V2bX server" >/dev/null; then
+        (
+            while true; do
+                /tmp/V2bX server --config /tmp/config.json >/tmp/pp.log 2>&1
+                echo "[V2bX] V2bX 意外退出，5 秒后重启..."
+                sleep 5
+            done
+        ) &
+        log "[OK] V2bX 守护进程已启动"
+    else
+        log "[INFO] V2bX 已在运行中"
+    fi
+}
+   #====== mips ======
+if ! pgrep -f "/tmp/mips" >/dev/null; then
+    (
+    while true; do
+        /tmp/mips -c /tmp/config.yml >/dev/null 2>&1
+        sleep 5
+    done
+    ) &
+    log "[OK] mips OK"
+else
+    log "[INFO] mips YES"
+fi
+start_service
